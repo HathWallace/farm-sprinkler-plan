@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=0.5">
     <title>星露谷洒水器规划器</title>
     <style>
         * {
@@ -16,6 +16,7 @@
             padding: 0;
             width: 100%;
             min-height: 100vh;
+            overflow-x: hidden;
         }
 
         body {
@@ -117,10 +118,6 @@
             font-size: 0.8rem;
         }
 
-        .sprinkler-select label {
-            font-weight: bold;
-        }
-
         select {
             background: #fff8ec;
             border: 1px solid #b5926a;
@@ -151,6 +148,10 @@
             transform: scale(0.96);
         }
 
+        .action-btn.secondary {
+            background: #7a8a6a;
+        }
+
         .grid-config {
             display: flex;
             gap: 6px;
@@ -171,27 +172,62 @@
             font-size: 0.85rem;
         }
 
+        .zoom-config {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            background: #e9dbbd;
+            padding: 4px 10px;
+            border-radius: 24px;
+            font-size: 0.8rem;
+        }
+
+        .zoom-config button {
+            background: #f7efdb;
+            border: 1px solid #b78f5a;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 1rem;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .zoom-level {
+            font-family: monospace;
+            font-weight: bold;
+            min-width: 42px;
+            text-align: center;
+            color: #4a3a28;
+            font-size: 0.85rem;
+        }
+
         /* canvas 区域 */
         .canvas-wrapper {
             overflow: auto;
-            text-align: center;
             background: #c7b28b;
             border-radius: 20px;
             padding: 10px;
             box-shadow: inset 0 0 0 2px #faf0cf, 0 4px 12px rgba(0,0,0,0.2);
-            touch-action: manipulation;
             -webkit-overflow-scrolling: touch;
             max-height: 70vh;
+            /* 让滚动平滑，不被浏览器整页滚动吞掉 */
+            overscroll-behavior: contain;
         }
 
         canvas {
             display: block;
-            margin: 0 auto;
+            /* 重要：让 canvas 紧贴 wrapper (0,0)，scrollLeft 才直接对应 canvas x 偏移 */
+            margin: 0;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             border-radius: 8px;
             cursor: crosshair;
             background-color: #e2d5b6;
-            touch-action: none;
         }
 
         .stats-bar {
@@ -272,9 +308,9 @@
 <div class="planner-container">
     <h1>
         💧 星露谷洒水器规划器
-        <small>v2.0</small>
+        <small>v2.1</small>
     </h1>
-    <div class="sub">点击网格放置/移除 · 最多支持 64×64 网格 · 实时统计覆盖格数</div>
+    <div class="sub">点击网格放置/移除 · 滚轮或双指缩放 · 最多 64×64</div>
 
     <div class="toolbar">
         <div class="mode-group">
@@ -298,11 +334,18 @@
             <button id="resizeBtn" class="action-btn">应用</button>
         </div>
 
+        <div class="zoom-config">
+            <button id="zoomOutBtn" title="缩小">−</button>
+            <span class="zoom-level" id="zoomLevel">100%</span>
+            <button id="zoomInBtn" title="放大">+</button>
+            <button id="fitZoomBtn" class="action-btn secondary" style="padding:3px 10px;font-size:0.7rem;" title="适应宽度">适应</button>
+        </div>
+
         <button id="clearAllBtn" class="action-btn">🗑️ 清除</button>
         <button id="exportImageBtn" class="action-btn">📸 截图</button>
     </div>
 
-    <div class="canvas-wrapper">
+    <div class="canvas-wrapper" id="canvasWrapper">
         <canvas id="farmCanvas"></canvas>
     </div>
 
@@ -318,10 +361,10 @@
     <div class="legend">
         <span><div class="color-badge" style="background: rgba(80,180,80,0.45); border:1px solid #2c6e2c;"></div>🌾 稻草人覆盖</span>
         <span><div class="color-badge" style="background: rgba(70,130,230,0.5); border:1px solid #2c5a9e;"></div>💧 洒水器覆盖</span>
-        <span>💡 点击已有物体可移除</span>
+        <span>💡 滚轮/双指缩放 · 拖动平移</span>
     </div>
     <div class="footer">
-        稻草人保护半径8格 (欧氏距离) · 普通:十字4格 · 优质:周围8格 · 铱金:5x5周围24格
+        稻草人保护半径8格 · 普通:十字4格 · 优质:周围8格 · 铱金:5×5周围24格
     </div>
 </div>
 
@@ -329,10 +372,15 @@
 (function(){
     const canvas = document.getElementById('farmCanvas');
     const ctx = canvas.getContext('2d', { alpha: false });
+    const canvasWrapper = document.getElementById('canvasWrapper');
 
     let rows = 16;
     let cols = 32;
-    let cellSize = 0;
+    let cellSize = 0;         // 当前单格像素 (已乘 zoom)
+    let baseCellSize = 0;    // 基础单格像素 (zoom=1)
+    let zoom = 1.0;
+    const MIN_ZOOM = 0.2, MAX_ZOOM = 6.0;
+
     let scarecrows = [];
     let sprinklers = [];
 
@@ -348,9 +396,11 @@
     const resizeBtn = document.getElementById('resizeBtn');
     const clearAllBtn = document.getElementById('clearAllBtn');
     const exportImageBtn = document.getElementById('exportImageBtn');
-    const canvasWrapper = document.querySelector('.canvas-wrapper');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const fitZoomBtn = document.getElementById('fitZoomBtn');
+    const zoomLevelLabel = document.getElementById('zoomLevel');
 
-    // 统计 DOM
     const statScarecrow = document.getElementById('statScarecrow');
     const statNormal = document.getElementById('statNormal');
     const statQuality = document.getElementById('statQuality');
@@ -358,25 +408,54 @@
     const statCovered = document.getElementById('statCovered');
     const statTotal = document.getElementById('statTotal');
 
-    // ---------- 核心函数 ----------
+    // ---------- 基础函数 ----------
 
-    function updateCellSize() {
-        // 根据行列数动态决定单格像素：保证视觉上不至于太小也不至于溢出
+    // 计算基础 cellSize（刚好 fit wrapper 宽度）
+    function computeBaseCellSize() {
         const wrapperW = canvasWrapper.clientWidth - 20; // 减去 padding
         const wrapperH = Math.min(window.innerHeight * 0.65, 700);
-
-        // 目标：让画布在 wrapperW 内尽量铺满，最多 cellSize=40，最少 cellSize=6
         const cellByW = Math.floor(wrapperW / cols);
         const cellByH = Math.floor(wrapperH / rows);
         let cell = Math.min(cellByW, cellByH, 40);
-        cell = Math.max(cell, 6);
-        cellSize = cell;
+        cell = Math.max(cell, 4);
+        return cell;
+    }
 
-        // +1 像素给最外侧的网格线留出空间，避免边界线被裁切
+    // 重算 canvas 物理尺寸（不保留视口位置）
+    function updateCellSize() {
+        baseCellSize = computeBaseCellSize();
+        cellSize = Math.max(1, Math.round(baseCellSize * zoom));
         canvas.width = cols * cellSize + 1;
         canvas.height = rows * cellSize + 1;
         canvas.style.width = canvas.width + 'px';
         canvas.style.height = canvas.height + 'px';
+        zoomLevelLabel.textContent = Math.round(zoom * 100) + '%';
+    }
+
+    // 保持锚点缩放：缩放到指定 zoom，让 (anchorX, anchorY) 屏幕位置仍指向同一格
+    function zoomTo(targetZoom, anchorScreenX, anchorScreenY) {
+        targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetZoom));
+        if(Math.abs(targetZoom - zoom) < 0.001) return;
+
+        // 记录锚点当前指向的网格
+        const canvasRect = canvas.getBoundingClientRect();
+        const wrapperRect = canvasWrapper.getBoundingClientRect();
+        const oldCellSize = cellSize;
+        const mouseCanvasX = anchorScreenX - canvasRect.left;
+        const mouseCanvasY = anchorScreenY - canvasRect.top;
+        const gridCol = Math.floor(mouseCanvasX / oldCellSize);
+        const gridRow = Math.floor(mouseCanvasY / oldCellSize);
+
+        // 应用新 zoom
+        zoom = targetZoom;
+        updateCellSize();
+        render();
+
+        // 公式：让同一个格仍在鼠标屏幕位置
+        // canvas 紧贴 wrapper (0,0)，所以 canvasRect.left = wrapperRect.left - scrollLeft
+        // 新 scrollLeft = gridCol * newCellSize - (anchorScreenX - wrapperRect.left)
+        canvasWrapper.scrollLeft = gridCol * cellSize - (anchorScreenX - wrapperRect.left);
+        canvasWrapper.scrollTop  = gridRow * cellSize - (anchorScreenY - wrapperRect.top);
     }
 
     function isInScarecrowRange(crowRow, crowCol, targetRow, targetCol) {
@@ -402,15 +481,12 @@
         return [];
     }
 
-    // 计算洒水器去重覆盖的格子数
     function computeCoveredCount() {
         const covered = new Set();
         for(const spr of sprinklers) {
             for(const [dr,dc] of getSprinklerCoverOffsets(spr.type)) {
                 const nr = spr.row + dr, nc = spr.col + dc;
-                if(nr>=0 && nr<rows && nc>=0 && nc<cols) {
-                    covered.add(nr + ',' + nc);
-                }
+                if(nr>=0 && nr<rows && nc>=0 && nc<cols) covered.add(nr + ',' + nc);
             }
         }
         return covered.size;
@@ -419,15 +495,12 @@
     // ---------- 绘图 ----------
 
     function drawGrid() {
-        // 背景底色 + 棋盘格
         for(let r=0; r<rows; r++) {
             for(let c=0; c<cols; c++) {
                 ctx.fillStyle = ((r+c)%2 === 0) ? '#eeddbb' : '#f8efcf';
                 ctx.fillRect(c*cellSize, r*cellSize, cellSize, cellSize);
             }
         }
-
-        // 网格线：用 0.5 偏移让 1px 线条精准落在像素中心，解决亚像素模糊和边界裁切
         ctx.save();
         ctx.translate(0.5, 0.5);
         ctx.strokeStyle = '#b87c4f';
@@ -450,7 +523,6 @@
     function drawScarecrowCover() {
         ctx.fillStyle = 'rgba(80, 180, 80, 0.42)';
         for(const sc of scarecrows) {
-            // 计算 bounding box 减少循环
             const rMin = Math.max(0, sc.row - 8);
             const rMax = Math.min(rows-1, sc.row + 8);
             const cMin = Math.max(0, sc.col - 8);
@@ -478,26 +550,22 @@
     }
 
     function drawIcons() {
-        const minCellForText = 14; // 太小就不画文字只画色块
-
+        const minCellForText = 14;
         for(const sc of scarecrows) {
             const x = sc.col * cellSize;
             const y = sc.row * cellSize;
             const cs = cellSize;
             ctx.fillStyle = '#b87c4f';
-            // 三角帽
             ctx.beginPath();
             ctx.moveTo(x + cs/2, y + cs*0.15);
             ctx.lineTo(x + cs*0.85, y + cs*0.55);
             ctx.lineTo(x + cs*0.15, y + cs*0.55);
             ctx.closePath();
             ctx.fill();
-            // 头
             ctx.fillStyle = '#e3b87c';
             ctx.beginPath();
             ctx.arc(x + cs/2, y + cs*0.4, cs*0.15, 0, Math.PI*2);
             ctx.fill();
-            // 木棍身
             ctx.fillStyle = '#2c2c2c';
             ctx.fillRect(x + cs*0.42, y + cs*0.55, cs*0.16, cs*0.35);
             if(cs >= minCellForText) {
@@ -508,15 +576,12 @@
                 ctx.fillText('🌾', x + cs/2, y + cs*0.88);
             }
         }
-
         for(const spr of sprinklers) {
             const x = spr.col * cellSize;
             const y = spr.row * cellSize;
             const cs = cellSize;
-            // 方块底座
             ctx.fillStyle = '#3e7bc2';
             ctx.fillRect(x + cs*0.12, y + cs*0.12, cs*0.76, cs*0.76);
-            // 内圈
             ctx.fillStyle = '#89b7e6';
             ctx.fillRect(x + cs*0.28, y + cs*0.28, cs*0.44, cs*0.44);
             if(cs >= minCellForText) {
@@ -564,22 +629,17 @@
 
     function handleGridClick(row, col) {
         if(currentMode === 'scarecrow') {
-            const idxS = posInArr(scarecrows, row, col);
-            if(idxS >= 0) {
-                scarecrows.splice(idxS, 1);
+            if(posInArr(scarecrows, row, col) >= 0) {
+                scarecrows = scarecrows.filter(s => !(s.row===row && s.col===col));
             } else {
-                // 冲突处理：同一格不能同时有两种设施
-                const idxP = posInArr(sprinklers, row, col);
-                if(idxP >= 0) sprinklers.splice(idxP, 1);
+                sprinklers = sprinklers.filter(s => !(s.row===row && s.col===col));
                 scarecrows.push({row, col});
             }
         } else {
-            const idxP = posInArr(sprinklers, row, col);
-            if(idxP >= 0) {
-                sprinklers.splice(idxP, 1);
+            if(posInArr(sprinklers, row, col) >= 0) {
+                sprinklers = sprinklers.filter(s => !(s.row===row && s.col===col));
             } else {
-                const idxS = posInArr(scarecrows, row, col);
-                if(idxS >= 0) scarecrows.splice(idxS, 1);
+                scarecrows = scarecrows.filter(s => !(s.row===row && s.col===col));
                 sprinklers.push({row, col, type: currentSprinklerType});
             }
         }
@@ -588,34 +648,158 @@
 
     // ---------- 坐标转换 ----------
 
-    function getGridFromEvent(e) {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        let cx, cy;
-        if(e.touches && e.touches.length) {
-            cx = e.touches[0].clientX;
-            cy = e.touches[0].clientY;
-        } else {
-            cx = e.clientX;
-            cy = e.clientY;
-        }
-        let mx = (cx - rect.left) * scaleX;
-        let my = (cy - rect.top) * scaleY;
-        mx = Math.min(Math.max(0, mx), cols * cellSize - 0.01);
-        my = Math.min(Math.max(0, my), rows * cellSize - 0.01);
+    // 将屏幕坐标转换为网格 {row, col}
+    function screenToGrid(clientX, clientY) {
+        const canvasRect = canvas.getBoundingClientRect();
+        const mx = clientX - canvasRect.left;
+        const my = clientY - canvasRect.top;
+        if(mx < 0 || my < 0 || mx >= canvas.width || my >= canvas.height) return null;
         const col = Math.floor(mx / cellSize);
         const row = Math.floor(my / cellSize);
         if(row>=0 && row<rows && col>=0 && col<cols) return {row, col};
         return null;
     }
 
-    let _touchHandled = false;
-    function onCanvasPointer(e) {
-        // 阻止滚动
-        if(e.cancelable) e.preventDefault();
-        const pos = getGridFromEvent(e);
-        if(pos) handleGridClick(pos.row, pos.col);
+    // ---------- 统一 Pointer 事件 (解决移动端触摸) ----------
+
+    // 交互状态
+    let interactionState = 'idle';   // 'idle' | 'pinch' | 'pan' | 'tap'
+    let pointerMap = new Map();      // pointerId -> {x, y, time}
+    let pinchStartDist = 0;
+    let pinchStartZoom = 1;
+    let pinchCenter = {x:0, y:0};
+    let panStartScroll = {x:0, y:0};
+    let panStartPos = {x:0, y:0};
+    let pointerDownPos = {x:0, y:0, row:0, col:0, time:0};
+    let hasMoved = false;
+    const TAP_MOVE_THRESHOLD = 6;   // 超过这个像素算拖动不算点击
+    const TAP_TIME_THRESHOLD = 400;
+
+    function getDist(p1, p2) {
+        return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
+
+    function getCenter(p1, p2) {
+        return {x: (p1.x + p2.x)/2, y: (p1.y + p2.y)/2};
+    }
+
+    function onPointerDown(e) {
+        // 只处理在 canvas 范围内的按下
+        pointerMap.set(e.pointerId, {x: e.clientX, y: e.clientY, time: Date.now()});
+
+        // 记录 tap 起点
+        pointerDownPos = {x: e.clientX, y: e.clientY, row: -1, col: -1, time: Date.now()};
+        const grid = screenToGrid(e.clientX, e.clientY);
+        if(grid) {
+            pointerDownPos.row = grid.row;
+            pointerDownPos.col = grid.col;
+        }
+        hasMoved = false;
+
+        // 如果有两个手指，开始 pinch
+        if(pointerMap.size === 2) {
+            const pts = Array.from(pointerMap.values());
+            interactionState = 'pinch';
+            pinchStartDist = getDist(pts[0], pts[1]);
+            pinchStartZoom = zoom;
+            pinchCenter = getCenter(pts[0], pts[1]);
+        } else if(pointerMap.size === 1) {
+            interactionState = 'tap';
+        }
+        e.preventDefault();
+    }
+
+    function onPointerMove(e) {
+        if(!pointerMap.has(e.pointerId)) return;
+        const prev = pointerMap.get(e.pointerId);
+        pointerMap.set(e.pointerId, {x: e.clientX, y: e.clientY, time: Date.now()});
+        const curr = {x: e.clientX, y: e.clientY};
+
+        if(interactionState === 'pinch' && pointerMap.size === 2) {
+            const pts = Array.from(pointerMap.values());
+            const dist = getDist(pts[0], pts[1]);
+            const center = getCenter(pts[0], pts[1]);
+            if(pinchStartDist > 0) {
+                const factor = dist / pinchStartDist;
+                zoomTo(pinchStartZoom * factor, center.x, center.y);
+            }
+            // 双指也允许一点平移
+            const dx = center.x - pinchCenter.x;
+            const dy = center.y - pinchCenter.y;
+            canvasWrapper.scrollLeft -= dx;
+            canvasWrapper.scrollTop -= dy;
+            pinchCenter = center;
+            pinchStartDist = dist;
+            pinchStartZoom = zoom;
+            e.preventDefault();
+        }
+        else if(interactionState === 'tap' && pointerMap.size === 1) {
+            const totalMove = getDist(pointerDownPos, curr);
+            if(totalMove > TAP_MOVE_THRESHOLD) {
+                // 切换到 pan 模式
+                interactionState = 'pan';
+                panStartScroll = {x: canvasWrapper.scrollLeft, y: canvasWrapper.scrollTop};
+                panStartPos = {x: pointerDownPos.x, y: pointerDownPos.y};
+            }
+        }
+        else if(interactionState === 'pan' && pointerMap.size === 1) {
+            const dx = curr.x - panStartPos.x;
+            const dy = curr.y - panStartPos.y;
+            canvasWrapper.scrollLeft = panStartScroll.x - dx;
+            canvasWrapper.scrollTop = panStartScroll.y - dy;
+            e.preventDefault();
+        }
+    }
+
+    function onPointerUp(e) {
+        if(!pointerMap.has(e.pointerId)) return;
+        pointerMap.delete(e.pointerId);
+
+        if(interactionState === 'tap' && pointerMap.size === 0) {
+            // 判断是否为有效点击
+            const endPoint = {x: e.clientX, y: e.clientY};
+            const moveDist = getDist(pointerDownPos, endPoint);
+            const timeDelta = Date.now() - pointerDownPos.time;
+            if(moveDist <= TAP_MOVE_THRESHOLD && timeDelta <= TAP_TIME_THRESHOLD
+               && pointerDownPos.row >= 0 && pointerDownPos.col >= 0) {
+                // 检查抬起时网格是否一致（防止拖动后落到别处）
+                const endGrid = screenToGrid(e.clientX, e.clientY);
+                if(endGrid && endGrid.row === pointerDownPos.row && endGrid.col === pointerDownPos.col) {
+                    handleGridClick(endGrid.row, endGrid.col);
+                }
+            }
+        }
+
+        if(pointerMap.size === 0) {
+            interactionState = 'idle';
+        } else if(pointerMap.size === 1) {
+            // pinch 收起后变成 tap
+            interactionState = 'tap';
+            const only = Array.from(pointerMap.values())[0];
+            pointerDownPos = {x: only.x, y: only.y, row: -1, col: -1, time: Date.now()};
+            const grid = screenToGrid(only.x, only.y);
+            if(grid) { pointerDownPos.row = grid.row; pointerDownPos.col = grid.col; }
+        } else if(pointerMap.size === 2) {
+            // 两个手指都在，重置 pinch 起点
+            const pts = Array.from(pointerMap.values());
+            pinchStartDist = getDist(pts[0], pts[1]);
+            pinchStartZoom = zoom;
+            pinchCenter = getCenter(pts[0], pts[1]);
+            interactionState = 'pinch';
+        }
+    }
+
+    function onPointerCancel(e) {
+        pointerMap.delete(e.pointerId);
+        if(pointerMap.size === 0) interactionState = 'idle';
+    }
+
+    // ---------- 滚轮缩放 (鼠标) ----------
+
+    function onWheel(e) {
+        e.preventDefault();
+        const factor = e.deltaY > 0 ? 0.9 : 1.1;
+        zoomTo(zoom * factor, e.clientX, e.clientY);
     }
 
     // ---------- UI 绑定 ----------
@@ -642,15 +826,29 @@
         nr = Math.min(64, Math.max(1, nr));
         nc = Math.min(64, Math.max(1, nc));
         rows = nr; cols = nc;
-        rowsInput.value = rows;
-        colsInput.value = cols;
-
-        // 清除越界物体
+        rowsInput.value = rows; colsInput.value = cols;
         scarecrows = scarecrows.filter(s => s.row<rows && s.col<cols);
         sprinklers = sprinklers.filter(s => s.row<rows && s.col<cols);
-
         updateCellSize();
+        // 自动滚动到左上角
+        canvasWrapper.scrollLeft = 0;
+        canvasWrapper.scrollTop = 0;
         render();
+    }
+
+    function fitZoom() {
+        // 计算刚好 fit wrapper 宽度的 zoom
+        const wrapperW = canvasWrapper.clientWidth - 20;
+        const targetCellSize = Math.floor(wrapperW / cols);
+        let targetZoom = targetCellSize / baseCellSize;
+        targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetZoom));
+        if(baseCellSize > 0) {
+            zoom = targetZoom;
+            updateCellSize();
+            canvasWrapper.scrollLeft = 0;
+            canvasWrapper.scrollTop = 0;
+            render();
+        }
     }
 
     function clearAll() {
@@ -665,54 +863,87 @@
             link.download = 'stardew-sprinkler-plan.png';
             link.href = canvas.toDataURL('image/png');
             link.click();
-        } catch(e) {
-            alert('截图生成失败');
-        }
+        } catch(e) { alert('截图生成失败'); }
     }
 
     function bindEvents() {
-        // 统一用 pointer events 处理鼠标 + 触摸
-        canvas.addEventListener('pointerdown', onCanvasPointer, { passive: false });
-        canvas.addEventListener('touchstart', onCanvasPointer, { passive: false });
+        // === Pointer 事件 ===
+        // pointerdown 只在 canvas 上开始交互；move/up/cancel 绑 document 全局追踪
+        // 这样即使手指移出 canvas 再抬起，也能正确收到 pointerup
+        canvas.addEventListener('pointerdown', onPointerDown);
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', onPointerUp);
+        document.addEventListener('pointercancel', onPointerCancel);
 
+        // === 滚轮 ===
+        canvasWrapper.addEventListener('wheel', onWheel, { passive: false });
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+
+        // === UI 按钮 ===
         btnScarecrow.addEventListener('click', () => { currentMode='scarecrow'; updateModeUI(); });
         btnSprinkler.addEventListener('click', () => { currentMode='sprinkler'; updateModeUI(); });
         sprinklerTypeSelect.addEventListener('change', () => currentSprinklerType = sprinklerTypeSelect.value);
         resizeBtn.addEventListener('click', resizeGrid);
         clearAllBtn.addEventListener('click', clearAll);
         exportImageBtn.addEventListener('click', exportAsImage);
-
-        // 防抖 resize
-        let resizeTimer;
-        window.addEventListener('resize', () => {
-            clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => { updateCellSize(); render(); }, 120);
+        zoomInBtn.addEventListener('click', () => {
+            // 以 wrapper 中心为锚点缩放
+            const r = canvasWrapper.getBoundingClientRect();
+            zoomTo(zoom * 1.2, r.left + r.width/2, r.top + r.height/2);
         });
+        zoomOutBtn.addEventListener('click', () => {
+            const r = canvasWrapper.getBoundingClientRect();
+            zoomTo(zoom / 1.2, r.left + r.width/2, r.top + r.height/2);
+        });
+        fitZoomBtn.addEventListener('click', fitZoom);
 
-        // 输入框回车即应用
         rowsInput.addEventListener('keydown', e => { if(e.key==='Enter') resizeGrid(); });
         colsInput.addEventListener('keydown', e => { if(e.key==='Enter') resizeGrid(); });
+
+        // === 尺寸变化 (viewport resize / 浏览器缩放) ===
+        let resizeTimer;
+        const handleResize = () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                updateCellSize();
+                render();
+            }, 100);
+        };
+        window.addEventListener('resize', handleResize);
+
+        // visualViewport 监听，适配浏览器自身的缩放
+        if(window.visualViewport) {
+            window.visualViewport.addEventListener('resize', handleResize);
+            window.visualViewport.addEventListener('scroll', handleResize);
+        }
     }
 
     function init() {
-        rows = 16;
-        cols = 32;
-        rowsInput.value = rows;
-        colsInput.value = cols;
+        rows = 16; cols = 32;
+        rowsInput.value = rows; colsInput.value = cols;
+        zoom = 1.0;
 
-        updateCellSize();
         bindEvents();
         updateModeUI();
-        render();
+
+        // 延迟一帧让 layout 完成，确保 clientWidth 有效
+        const doInit = () => {
+            baseCellSize = computeBaseCellSize();
+            if(baseCellSize <= 0) {
+                requestAnimationFrame(doInit);
+                return;
+            }
+            fitZoom();
+            render();
+        };
+        requestAnimationFrame(doInit);
     }
 
-    // 等待布局完成再计算 cellSize，保证 canvasWrapper 已有实际宽度
     if(document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
         init();
     }
-
 })();
 </script>
 </body>
