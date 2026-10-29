@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>星露谷洒水器规划器</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        body {
+            background: #2b4b2f;
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+            padding: 12px;
+            padding-bottom: 40px;
+        }
+
+        .planner-container {
+            background: #fef7e0;
+            border-radius: 1.5rem;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.4), inset 0 1px 2px rgba(255,255,200,0.6);
+            padding: 1rem;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        h1 {
+            margin: 0 0 0.25rem 0;
+            font-size: 1.3rem;
+            color: #3c2a1f;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+
+        h1 small {
+            font-size: 0.7rem;
+            background: #e9d6b0;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            font-weight: normal;
+            color: #4a3a28;
+        }
+
+        .sub {
+            color: #6b4c3b;
+            margin-bottom: 1rem;
+            border-left: 3px solid #8baf6b;
+            padding-left: 8px;
+            font-size: 0.78rem;
+        }
+
+        .toolbar {
+            background: #fff3db;
+            border-radius: 24px;
+            padding: 10px 14px;
+            margin-bottom: 14px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        .mode-group {
+            display: flex;
+            gap: 6px;
+            background: #e9dbbd;
+            padding: 4px 8px;
+            border-radius: 24px;
+            align-items: center;
+        }
+
+        .mode-btn {
+            background: #f7efdb;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: 0.1s linear;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+
+        .mode-btn.active {
+            background: #5f8b4c;
+            color: white;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.2), 0 1px 1px rgba(255,255,200,0.8);
+        }
+
+        .sprinkler-select {
+            background: #f7efdb;
+            padding: 4px 10px;
+            border-radius: 24px;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            font-size: 0.8rem;
+        }
+
+        .sprinkler-select label {
+            font-weight: bold;
+        }
+
+        select {
+            background: #fff8ec;
+            border: 1px solid #b5926a;
+            border-radius: 20px;
+            padding: 4px 8px;
+            font-weight: bold;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.8rem;
+            max-width: 140px;
+        }
+
+        button.action-btn {
+            background: #bc9a6c;
+            border: none;
+            color: white;
+            padding: 5px 14px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.1s;
+            box-shadow: 0 2px 3px rgba(0,0,0,0.2);
+            font-size: 0.78rem;
+            font-family: inherit;
+        }
+
+        button.action-btn:active {
+            transform: scale(0.96);
+        }
+
+        .grid-config {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            background: #e9dbbd;
+            padding: 4px 10px;
+            border-radius: 24px;
+            font-size: 0.8rem;
+        }
+
+        .grid-config input {
+            width: 52px;
+            text-align: center;
+            border-radius: 16px;
+            border: 1px solid #b78f5a;
+            padding: 4px;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+
+        /* canvas 区域 */
+        .canvas-wrapper {
+            overflow: auto;
+            text-align: center;
+            background: #c7b28b;
+            border-radius: 20px;
+            padding: 10px;
+            box-shadow: inset 0 0 0 2px #faf0cf, 0 4px 12px rgba(0,0,0,0.2);
+            touch-action: manipulation;
+            -webkit-overflow-scrolling: touch;
+            max-height: 70vh;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            border-radius: 8px;
+            cursor: crosshair;
+            background-color: #e2d5b6;
+            touch-action: none;
+        }
+
+        .stats-bar {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 12px;
+            background: #f3ecdb;
+            border-radius: 24px;
+            padding: 8px 14px;
+            font-size: 0.75rem;
+        }
+
+        .stat-item {
+            background: #fff8ec;
+            border-radius: 14px;
+            padding: 4px 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-weight: bold;
+            color: #4a3a28;
+        }
+
+        .stat-item .num {
+            color: #2c5a9e;
+            font-family: monospace;
+            font-size: 0.95rem;
+        }
+
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 10px;
+            background: #f3ecdb;
+            border-radius: 24px;
+            padding: 8px 14px;
+            font-size: 0.72rem;
+        }
+
+        .legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .color-badge {
+            width: 18px;
+            height: 14px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 0.65rem;
+            color: #7c6148;
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 8px; }
+            .planner-container { padding: 0.75rem; border-radius: 1rem; }
+            h1 { font-size: 1.1rem; }
+            .toolbar { gap: 6px; padding: 8px 10px; }
+            .mode-btn { padding: 5px 10px; font-size: 0.75rem; }
+            .grid-config input { width: 45px; }
+            .canvas-wrapper { padding: 6px; max-height: 65vh; }
+            .legend { gap: 8px; font-size: 0.65rem; }
+            .stats-bar { gap: 6px; padding: 6px 10px; font-size: 0.7rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="planner-container">
+    <h1>
+        💧 星露谷洒水器规划器
+        <small>v2.0</small>
+    </h1>
+    <div class="sub">点击网格放置/移除 · 最多支持 64×64 网格 · 实时统计覆盖格数</div>
+
+    <div class="toolbar">
+        <div class="mode-group">
+            <button id="btnScarecrow" class="mode-btn">🌾 稻草人</button>
+            <button id="btnSprinkler" class="mode-btn active">💧 洒水器</button>
+        </div>
+
+        <div class="sprinkler-select" id="sprinklerTypePanel">
+            <label>💦 类型:</label>
+            <select id="sprinklerType">
+                <option value="normal">💧 普通 (4格)</option>
+                <option value="quality">⭐ 优质 (8格)</option>
+                <option value="iridium">✨ 铱金 (24格)</option>
+            </select>
+        </div>
+
+        <div class="grid-config">
+            <span>📐</span>
+            <input type="number" id="rowsInput" value="16" min="1" max="64" step="1">行
+            <input type="number" id="colsInput" value="32" min="1" max="64" step="1">列
+            <button id="resizeBtn" class="action-btn">应用</button>
+        </div>
+
+        <button id="clearAllBtn" class="action-btn">🗑️ 清除</button>
+        <button id="exportImageBtn" class="action-btn">📸 截图</button>
+    </div>
+
+    <div class="canvas-wrapper">
+        <canvas id="farmCanvas"></canvas>
+    </div>
+
+    <div class="stats-bar" id="statsBar">
+        <span class="stat-item">🌾 稻草人: <span class="num" id="statScarecrow">0</span></span>
+        <span class="stat-item">💧 普通: <span class="num" id="statNormal">0</span></span>
+        <span class="stat-item">⭐ 优质: <span class="num" id="statQuality">0</span></span>
+        <span class="stat-item">✨ 铱金: <span class="num" id="statIridium">0</span></span>
+        <span class="stat-item">💠 洒水器覆盖格(去重): <span class="num" id="statCovered">0</span></span>
+        <span class="stat-item">📊 总网格: <span class="num" id="statTotal">0</span></span>
+    </div>
+
+    <div class="legend">
+        <span><div class="color-badge" style="background: rgba(80,180,80,0.45); border:1px solid #2c6e2c;"></div>🌾 稻草人覆盖</span>
+        <span><div class="color-badge" style="background: rgba(70,130,230,0.5); border:1px solid #2c5a9e;"></div>💧 洒水器覆盖</span>
+        <span>💡 点击已有物体可移除</span>
+    </div>
+    <div class="footer">
+        稻草人保护半径8格 (欧氏距离) · 普通:十字4格 · 优质:周围8格 · 铱金:5x5周围24格
+    </div>
+</div>
+
+<script>
+(function(){
+    const canvas = document.getElementById('farmCanvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+
+    let rows = 16;
+    let cols = 32;
+    let cellSize = 0;
+    let scarecrows = [];
+    let sprinklers = [];
+
+    let currentMode = 'sprinkler';
+    let currentSprinklerType = 'normal';
+
+    // DOM refs
+    const rowsInput = document.getElementById('rowsInput');
+    const colsInput = document.getElementById('colsInput');
+    const btnScarecrow = document.getElementById('btnScarecrow');
+    const btnSprinkler = document.getElementById('btnSprinkler');
+    const sprinklerTypeSelect = document.getElementById('sprinklerType');
+    const resizeBtn = document.getElementById('resizeBtn');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    const exportImageBtn = document.getElementById('exportImageBtn');
+    const canvasWrapper = document.querySelector('.canvas-wrapper');
+
+    // 统计 DOM
+    const statScarecrow = document.getElementById('statScarecrow');
+    const statNormal = document.getElementById('statNormal');
+    const statQuality = document.getElementById('statQuality');
+    const statIridium = document.getElementById('statIridium');
+    const statCovered = document.getElementById('statCovered');
+    const statTotal = document.getElementById('statTotal');
+
+    // ---------- 核心函数 ----------
+
+    function updateCellSize() {
+        // 根据行列数动态决定单格像素：保证视觉上不至于太小也不至于溢出
+        const wrapperW = canvasWrapper.clientWidth - 20; // 减去 padding
+        const wrapperH = Math.min(window.innerHeight * 0.65, 700);
+
+        // 目标：让画布在 wrapperW 内尽量铺满，最多 cellSize=40，最少 cellSize=6
+        const cellByW = Math.floor(wrapperW / cols);
+        const cellByH = Math.floor(wrapperH / rows);
+        let cell = Math.min(cellByW, cellByH, 40);
+        cell = Math.max(cell, 6);
+        cellSize = cell;
+
+        // +1 像素给最外侧的网格线留出空间，避免边界线被裁切
+        canvas.width = cols * cellSize + 1;
+        canvas.height = rows * cellSize + 1;
+        canvas.style.width = canvas.width + 'px';
+        canvas.style.height = canvas.height + 'px';
+    }
+
+    function isInScarecrowRange(crowRow, crowCol, targetRow, targetCol) {
+        const dx = crowCol - targetCol;
+        const dy = crowRow - targetRow;
+        return dx*dx + dy*dy <= 64;
+    }
+
+    function getSprinklerCoverOffsets(type) {
+        if(type === 'normal')  return [[-1,0],[1,0],[0,-1],[0,1]];
+        if(type === 'quality') {
+            const o = [];
+            for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++)
+                if(dr!==0||dc!==0) o.push([dr,dc]);
+            return o;
+        }
+        if(type === 'iridium') {
+            const o = [];
+            for(let dr=-2;dr<=2;dr++) for(let dc=-2;dc<=2;dc++)
+                if(dr!==0||dc!==0) o.push([dr,dc]);
+            return o;
+        }
+        return [];
+    }
+
+    // 计算洒水器去重覆盖的格子数
+    function computeCoveredCount() {
+        const covered = new Set();
+        for(const spr of sprinklers) {
+            for(const [dr,dc] of getSprinklerCoverOffsets(spr.type)) {
+                const nr = spr.row + dr, nc = spr.col + dc;
+                if(nr>=0 && nr<rows && nc>=0 && nc<cols) {
+                    covered.add(nr + ',' + nc);
+                }
+            }
+        }
+        return covered.size;
+    }
+
+    // ---------- 绘图 ----------
+
+    function drawGrid() {
+        // 背景底色 + 棋盘格
+        for(let r=0; r<rows; r++) {
+            for(let c=0; c<cols; c++) {
+                ctx.fillStyle = ((r+c)%2 === 0) ? '#eeddbb' : '#f8efcf';
+                ctx.fillRect(c*cellSize, r*cellSize, cellSize, cellSize);
+            }
+        }
+
+        // 网格线：用 0.5 偏移让 1px 线条精准落在像素中心，解决亚像素模糊和边界裁切
+        ctx.save();
+        ctx.translate(0.5, 0.5);
+        ctx.strokeStyle = '#b87c4f';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for(let i=0; i<=rows; i++) {
+            const y = i * cellSize;
+            ctx.moveTo(0, y);
+            ctx.lineTo(cols * cellSize, y);
+        }
+        for(let i=0; i<=cols; i++) {
+            const x = i * cellSize;
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, rows * cellSize);
+        }
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    function drawScarecrowCover() {
+        ctx.fillStyle = 'rgba(80, 180, 80, 0.42)';
+        for(const sc of scarecrows) {
+            // 计算 bounding box 减少循环
+            const rMin = Math.max(0, sc.row - 8);
+            const rMax = Math.min(rows-1, sc.row + 8);
+            const cMin = Math.max(0, sc.col - 8);
+            const cMax = Math.min(cols-1, sc.col + 8);
+            for(let r=rMin; r<=rMax; r++) {
+                for(let c=cMin; c<=cMax; c++) {
+                    if(isInScarecrowRange(sc.row, sc.col, r, c)) {
+                        ctx.fillRect(c*cellSize, r*cellSize, cellSize, cellSize);
+                    }
+                }
+            }
+        }
+    }
+
+    function drawSprinklerCover() {
+        ctx.fillStyle = 'rgba(70, 130, 230, 0.5)';
+        for(const spr of sprinklers) {
+            for(const [dr,dc] of getSprinklerCoverOffsets(spr.type)) {
+                const nr = spr.row + dr, nc = spr.col + dc;
+                if(nr>=0 && nr<rows && nc>=0 && nc<cols) {
+                    ctx.fillRect(nc*cellSize, nr*cellSize, cellSize, cellSize);
+                }
+            }
+        }
+    }
+
+    function drawIcons() {
+        const minCellForText = 14; // 太小就不画文字只画色块
+
+        for(const sc of scarecrows) {
+            const x = sc.col * cellSize;
+            const y = sc.row * cellSize;
+            const cs = cellSize;
+            ctx.fillStyle = '#b87c4f';
+            // 三角帽
+            ctx.beginPath();
+            ctx.moveTo(x + cs/2, y + cs*0.15);
+            ctx.lineTo(x + cs*0.85, y + cs*0.55);
+            ctx.lineTo(x + cs*0.15, y + cs*0.55);
+            ctx.closePath();
+            ctx.fill();
+            // 头
+            ctx.fillStyle = '#e3b87c';
+            ctx.beginPath();
+            ctx.arc(x + cs/2, y + cs*0.4, cs*0.15, 0, Math.PI*2);
+            ctx.fill();
+            // 木棍身
+            ctx.fillStyle = '#2c2c2c';
+            ctx.fillRect(x + cs*0.42, y + cs*0.55, cs*0.16, cs*0.35);
+            if(cs >= minCellForText) {
+                ctx.fillStyle = '#f4c542';
+                ctx.font = `bold ${Math.max(8, Math.floor(cs*0.35))}px "Segoe UI"`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('🌾', x + cs/2, y + cs*0.88);
+            }
+        }
+
+        for(const spr of sprinklers) {
+            const x = spr.col * cellSize;
+            const y = spr.row * cellSize;
+            const cs = cellSize;
+            // 方块底座
+            ctx.fillStyle = '#3e7bc2';
+            ctx.fillRect(x + cs*0.12, y + cs*0.12, cs*0.76, cs*0.76);
+            // 内圈
+            ctx.fillStyle = '#89b7e6';
+            ctx.fillRect(x + cs*0.28, y + cs*0.28, cs*0.44, cs*0.44);
+            if(cs >= minCellForText) {
+                let icon = '💧';
+                if(spr.type === 'quality') icon = '⭐';
+                else if(spr.type === 'iridium') icon = '✨';
+                ctx.fillStyle = '#ffffff';
+                ctx.font = `${Math.max(8, Math.floor(cs*0.4))}px "Segoe UI"`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(icon, x + cs/2, y + cs/2);
+            }
+        }
+    }
+
+    function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawGrid();
+        drawScarecrowCover();
+        drawSprinklerCover();
+        drawIcons();
+        updateStats();
+    }
+
+    function updateStats() {
+        statScarecrow.textContent = scarecrows.length;
+        let n=0,q=0,i=0;
+        for(const s of sprinklers) {
+            if(s.type==='normal') n++;
+            else if(s.type==='quality') q++;
+            else i++;
+        }
+        statNormal.textContent = n;
+        statQuality.textContent = q;
+        statIridium.textContent = i;
+        statCovered.textContent = computeCoveredCount();
+        statTotal.textContent = rows * cols;
+    }
+
+    // ---------- 数据操作 ----------
+
+    function posInArr(arr, row, col) {
+        return arr.findIndex(s => s.row===row && s.col===col);
+    }
+
+    function handleGridClick(row, col) {
+        if(currentMode === 'scarecrow') {
+            const idxS = posInArr(scarecrows, row, col);
+            if(idxS >= 0) {
+                scarecrows.splice(idxS, 1);
+            } else {
+                // 冲突处理：同一格不能同时有两种设施
+                const idxP = posInArr(sprinklers, row, col);
+                if(idxP >= 0) sprinklers.splice(idxP, 1);
+                scarecrows.push({row, col});
+            }
+        } else {
+            const idxP = posInArr(sprinklers, row, col);
+            if(idxP >= 0) {
+                sprinklers.splice(idxP, 1);
+            } else {
+                const idxS = posInArr(scarecrows, row, col);
+                if(idxS >= 0) scarecrows.splice(idxS, 1);
+                sprinklers.push({row, col, type: currentSprinklerType});
+            }
+        }
+        render();
+    }
+
+    // ---------- 坐标转换 ----------
+
+    function getGridFromEvent(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        let cx, cy;
+        if(e.touches && e.touches.length) {
+            cx = e.touches[0].clientX;
+            cy = e.touches[0].clientY;
+        } else {
+            cx = e.clientX;
+            cy = e.clientY;
+        }
+        let mx = (cx - rect.left) * scaleX;
+        let my = (cy - rect.top) * scaleY;
+        mx = Math.min(Math.max(0, mx), cols * cellSize - 0.01);
+        my = Math.min(Math.max(0, my), rows * cellSize - 0.01);
+        const col = Math.floor(mx / cellSize);
+        const row = Math.floor(my / cellSize);
+        if(row>=0 && row<rows && col>=0 && col<cols) return {row, col};
+        return null;
+    }
+
+    let _touchHandled = false;
+    function onCanvasPointer(e) {
+        // 阻止滚动
+        if(e.cancelable) e.preventDefault();
+        const pos = getGridFromEvent(e);
+        if(pos) handleGridClick(pos.row, pos.col);
+    }
+
+    // ---------- UI 绑定 ----------
+
+    function updateModeUI() {
+        if(currentMode === 'scarecrow') {
+            btnScarecrow.classList.add('active');
+            btnSprinkler.classList.remove('active');
+            document.getElementById('sprinklerTypePanel').style.opacity = '0.5';
+            sprinklerTypeSelect.disabled = true;
+        } else {
+            btnScarecrow.classList.remove('active');
+            btnSprinkler.classList.add('active');
+            document.getElementById('sprinklerTypePanel').style.opacity = '1';
+            sprinklerTypeSelect.disabled = false;
+        }
+    }
+
+    function resizeGrid() {
+        let nr = parseInt(rowsInput.value, 10);
+        let nc = parseInt(colsInput.value, 10);
+        if(isNaN(nr)) nr = 16;
+        if(isNaN(nc)) nc = 32;
+        nr = Math.min(64, Math.max(1, nr));
+        nc = Math.min(64, Math.max(1, nc));
+        rows = nr; cols = nc;
+        rowsInput.value = rows;
+        colsInput.value = cols;
+
+        // 清除越界物体
+        scarecrows = scarecrows.filter(s => s.row<rows && s.col<cols);
+        sprinklers = sprinklers.filter(s => s.row<rows && s.col<cols);
+
+        updateCellSize();
+        render();
+    }
+
+    function clearAll() {
+        scarecrows = [];
+        sprinklers = [];
+        render();
+    }
+
+    function exportAsImage() {
+        try {
+            const link = document.createElement('a');
+            link.download = 'stardew-sprinkler-plan.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        } catch(e) {
+            alert('截图生成失败');
+        }
+    }
+
+    function bindEvents() {
+        // 统一用 pointer events 处理鼠标 + 触摸
+        canvas.addEventListener('pointerdown', onCanvasPointer, { passive: false });
+        canvas.addEventListener('touchstart', onCanvasPointer, { passive: false });
+
+        btnScarecrow.addEventListener('click', () => { currentMode='scarecrow'; updateModeUI(); });
+        btnSprinkler.addEventListener('click', () => { currentMode='sprinkler'; updateModeUI(); });
+        sprinklerTypeSelect.addEventListener('change', () => currentSprinklerType = sprinklerTypeSelect.value);
+        resizeBtn.addEventListener('click', resizeGrid);
+        clearAllBtn.addEventListener('click', clearAll);
+        exportImageBtn.addEventListener('click', exportAsImage);
+
+        // 防抖 resize
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => { updateCellSize(); render(); }, 120);
+        });
+
+        // 输入框回车即应用
+        rowsInput.addEventListener('keydown', e => { if(e.key==='Enter') resizeGrid(); });
+        colsInput.addEventListener('keydown', e => { if(e.key==='Enter') resizeGrid(); });
+    }
+
+    function init() {
+        rows = 16;
+        cols = 32;
+        rowsInput.value = rows;
+        colsInput.value = cols;
+
+        updateCellSize();
+        bindEvents();
+        updateModeUI();
+        render();
+    }
+
+    // 等待布局完成再计算 cellSize，保证 canvasWrapper 已有实际宽度
+    if(document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+})();
+</script>
+</body>
+</html>
